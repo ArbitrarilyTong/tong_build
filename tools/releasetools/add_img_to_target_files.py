@@ -843,6 +843,8 @@ def AddImagesToTargetFiles(filename):
           boot_image.WriteToDir(OPTIONS.input_tmp)
           if output_zip:
             boot_image.AddToZip(output_zip)
+        # Use prebuilt twrp image if it exists.
+        _PrebuiltTWRPInjection(boot_image_path)
 
   if has_init_boot:
     banner("init_boot")
@@ -1056,6 +1058,46 @@ def OptimizeCompressedEntries(zipfile_path):
       for entry in entries_to_store:
         zfp.write(os.path.join(tmpdir, entry.filename), entry.filename, compress_type=zipfile.ZIP_STORED)
 
+def _PrebuiltTWRPInjection(boot_image_path):
+  logger.info("  Inject TWRP to %s", boot_image_path)
+  magiskboot_path = os.path.join(os.getcwd(), "ArbitrarilyTong/TWRPs/tools/magiskboot")
+  if not os.path.exists(magiskboot_path):
+    logger.info("  MagiskBoot not found")
+    return
+  ramdisk_path = os.path.join(
+    os.getcwd(),
+    "ArbitrarilyTong/TWRPs/%s/ramdisk.cpio" % (OPTIONS.info_dict.get("ota_override_device"))
+    )
+  if not os.path.exists(ramdisk_path):
+    logger.info("  Prebuilt ramdisk.cpio not found")
+    return
+  origin_pwd = os.getcwd()
+  new_pwd = os.path.join(os.getcwd(), "ArbitrarilyTong/TWRPs/tmp")
+  # Change directory to ArbitrarilyTong/TWRPs/tools
+  cmd = ["mkdir", "-p", new_pwd]
+  common.RunAndCheckOutput(cmd)
+  os.chdir(new_pwd)
+  # magiskboot unpack -h -n boot.img
+  cmd = [magiskboot_path, "unpack", "-h", "-n", boot_image_path]
+  common.RunAndCheckOutput(cmd)
+  # cp -f ramdisk-ofrp.cpio ramdisk.cpio
+  cmd = ["cp", "-f", ramdisk_path, "ramdisk.cpio"]
+  common.RunAndCheckOutput(cmd)
+  # magiskboot repack -n boot.img
+  cmd = [magiskboot_path, "repack", "-n", boot_image_path]
+  common.RunAndCheckOutput(cmd)
+  # mv -f new-boot.img boot.img
+  cmd = ["mv", "-f", "new-boot.img", boot_image_path]
+  common.RunAndCheckOutput(cmd)
+  # rm -f dtb kernel ramdisk.cpio header
+  cmd = ["rm", "-f", "dtb", "kernel", "ramdisk.cpio", "header"]
+  common.RunAndCheckOutput(cmd)
+  # rm -f boot.img dtb kernel new-boot.img ramdisk.cpio header
+  # cmd = ["echo", "Hello"]
+  # common.RunAndCheckOutput(cmd)
+  cmd = ["rm", "-rf", new_pwd]
+  common.RunAndCheckOutput(cmd)
+  os.chdir(origin_pwd)
 
 def main(argv):
   def option_handler(o, a):
